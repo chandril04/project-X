@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
+    
+    <script>
+      // Custom Shader for Chroma Key (Green Screen)
+      AFRAME.registerShader('chromakey', {
+        schema: {
+          src: {type: 'map'},
+          color: {default: {r: 0.1, g: 0.9, b: 0.2}}, // The green to filter
+          threshold: {default: 0.3} // Sensitivity
+        },
+        init: function(data) {
+          this.textureLoader = new THREE.VideoTexture(data.src);
+          this.material = new THREE.ShaderMaterial({
+            uniforms: {
+              tex: {value: this.textureLoader},
+              color: {value: new THREE.Color(data.color)},
+              threshold: {value: data.threshold}
+            },
+            vertexShader: `
+              varying vec2 vUv;
+              void main() {
+                vUv = uv;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+              }
+            `,
+            fragmentShader: `
+              varying vec2 vUv;
+              uniform sampler2D tex;
+              uniform vec3 color;
+              uniform float threshold;
+              void main() {
+                vec4 texColor = texture2D(tex, vUv);
+                float diff = distance(texColor.rgb, color);
+                if (diff < threshold) {
+                  discard;
+                } else {
+                  gl_FragColor = texColor;
+                }
+              }
+            `,
+            transparent: true
+          });
+        },
+        update: function(data) {
+          this.material.uniforms.color.value.set(data.color);
+          this.material.uniforms.threshold.value = data.threshold;
+        }
+      });
+    </script>
+  </head>
+
+  <body>
+    <div id="scanning-overlay" style="display:none"></div>
+
+    <a-scene 
+      mindar-image="imageTargetSrc: ./targets.mind;" 
+      color-space="sRGB" 
+      renderer="colorManagement: true, physicallyCorrectLights" 
+      vr-mode-ui="enabled: false" 
+      device-orientation-permission-ui="enabled: false">
+      
+      <a-assets>
+        <video id="gs-video" src="./your-video.mp4" preload="auto" loop="true" crossorigin="anonymous" playsinline webkit-playsinline></video>
+      </a-assets>
+
+      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+      <a-entity mindar-image-target="targetIndex: 0">
+        <a-plane 
+          id="video-screen"
+          material="shader: chromakey; src: #gs-video; threshold: 0.4" 
+          position="0 0 0" 
+          height="1" 
+          width="1" 
+          rotation="0 0 0">
+        </a-plane>
+      </a-entity>
+    </a-scene>
+
+    <script>
+      // Autoplay logic (browsers block sound until a click happens)
+      const sceneEl = document.querySelector('a-scene');
+      const video = document.querySelector('#gs-video');
+      
+      sceneEl.addEventListener("targetFound", event => {
+        console.log("Target found! Playing video...");
+        video.play();
+      });
+
+      sceneEl.addEventListener("targetLost", event => {
+        console.log("Target lost. Pausing.");
+        video.pause();
+      });
+    </script>
+  </body>
+</html>
