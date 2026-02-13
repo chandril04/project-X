@@ -6,11 +6,12 @@
     <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
 
     <script>
+        // 1. YOUR WORKING TRANSPARENT SHADER
         AFRAME.registerShader('transparent-video', {
             schema: {
                 src: {type: 'map'},
-                color: {type: 'color', default: '#00ff00'}, // Targeted green
-                threshold: {type: 'number', default: 0.1}  // How much green to kill
+                color: {type: 'color', default: '#00ff00'},
+                threshold: {type: 'number', default: 0.6}
             },
             init: function(data) {
                 this.texture = new THREE.VideoTexture(data.src);
@@ -34,35 +35,55 @@
                         varying vec2 vUv;
                         void main() {
                             vec4 fColor = texture2D(tex, vUv);
-                            // Calculate how close the pixel is to the target green
                             float diff = distance(fColor.rgb, keyColor);
-                            if (diff < threshold) {
-                                discard; // Make it transparent
-                            } else {
-                                gl_FragColor = fColor;
-                            }
+                            if (diff < threshold) discard;
+                            else gl_FragColor = fColor;
                         }
                     `,
                     transparent: true
                 });
             },
             tick: function() {
-                // FORCE THE VIDEO TO UPDATE EACH FRAME
                 if (this.texture) this.texture.needsUpdate = true;
             }
         });
 
-        // This component handles the actual "Play" command when the target is found
+        // 2. SURFACE SPANWER COMPONENT
+        AFRAME.registerComponent('surface-spawner', {
+            init: function() {
+                const videoAsset = document.querySelector('#gs-video');
+                
+                this.el.addEventListener('click', (evt) => {
+                    // Create a new entity for the spawned video
+                    const newVideo = document.createElement('a-plane');
+                    
+                    // Get the exact 3D point where the user clicked the "floor"
+                    const touchPoint = evt.detail.intersection.point;
+                    
+                    newVideo.setAttribute('position', touchPoint);
+                    // Rotation 0 0 0 makes it "stand up" like a person
+                    newVideo.setAttribute('rotation', '0 0 0'); 
+                    newVideo.setAttribute('material', {
+                        shader: 'transparent-video',
+                        src: '#gs-video',
+                        threshold: 0.6
+                    });
+                    newVideo.setAttribute('width', '1');
+                    newVideo.setAttribute('height', '1.77');
+                    
+                    this.el.sceneEl.appendChild(newVideo);
+                    videoAsset.play();
+                    console.log("Spawned at:", touchPoint);
+                });
+            }
+        });
+
+        // IMAGE TARGET CONTROLLER
         AFRAME.registerComponent('ar-controller', {
             init: function() {
                 const video = document.querySelector('#gs-video');
                 this.el.addEventListener('targetFound', () => {
-                    video.muted = false; // Try to play with sound
-                    video.play().catch(e => {
-                        console.log("Autoplay blocked, playing muted");
-                        video.muted = true;
-                        video.play();
-                    });
+                    video.play();
                 });
                 this.el.addEventListener('targetLost', () => video.pause());
             }
@@ -78,7 +99,13 @@
         </button>
     </div>
 
-    <a-scene mindar-image="imageTargetSrc: ./targets.mind;" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
+    <a-scene 
+        mindar-image="imageTargetSrc: ./targets.mind;" 
+        vr-mode-ui="enabled: false" 
+        device-orientation-permission-ui="enabled: false"
+        cursor="rayOrigin: mouse"
+        raycaster="objects: .clickable-surface">
+
         <a-assets>
             <video id="gs-video" src="video.mp4" preload="auto" loop="true" crossorigin="anonymous" playsinline webkit-playsinline></video>
         </a-assets>
@@ -90,8 +117,20 @@
                 material="shader: transparent-video; src: #gs-video; threshold: 0.6; color: #00ff00" 
                 position="0 0 0" 
                 height="1" 
-                width="1.77"> </a-plane>
+                width="1.77"> 
+            </a-plane>
         </a-entity>
+
+        <a-plane 
+            class="clickable-surface" 
+            surface-spawner 
+            rotation="-90 0 0" 
+            position="0 -1.5 -2" 
+            width="10" 
+            height="10" 
+            material="opacity: 0.0; transparent: true">
+        </a-plane>
+
     </a-scene>
 </body>
 </html>
