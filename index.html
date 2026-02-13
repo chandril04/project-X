@@ -5,8 +5,28 @@
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
 
+    <style>
+        /* Modern UI Overlay */
+        #msg-box {
+            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+            padding: 15px 25px; background: rgba(0,0,0,0.8); color: white;
+            border-radius: 30px; font-family: sans-serif; font-weight: bold;
+            z-index: 10000; text-align: center; border: 2px solid #00ff00;
+            display: none; /* Hidden by default */
+        }
+        #start-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); z-index: 10001;
+            display: flex; justify-content: center; align-items: center;
+        }
+        button {
+            padding: 20px 40px; font-size: 18px; border-radius: 10px;
+            background: #28a745; color: white; border: none; cursor: pointer;
+        }
+    </style>
+
     <script>
-        // 1. YOUR WORKING TRANSPARENT SHADER
+        // SHADER: Your working transparent video code
         AFRAME.registerShader('transparent-video', {
             schema: {
                 src: {type: 'map'},
@@ -21,18 +41,9 @@
                         keyColor: {value: new THREE.Color(data.color)},
                         threshold: {value: data.threshold}
                     },
-                    vertexShader: `
-                        varying vec2 vUv;
-                        void main() {
-                            vUv = uv;
-                            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                        }
-                    `,
+                    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
                     fragmentShader: `
-                        uniform sampler2D tex;
-                        uniform vec3 keyColor;
-                        uniform float threshold;
-                        varying vec2 vUv;
+                        uniform sampler2D tex; uniform vec3 keyColor; uniform float threshold; varying vec2 vUv;
                         void main() {
                             vec4 fColor = texture2D(tex, vUv);
                             float diff = distance(fColor.rgb, keyColor);
@@ -43,93 +54,80 @@
                     transparent: true
                 });
             },
-            tick: function() {
-                if (this.texture) this.texture.needsUpdate = true;
-            }
+            tick: function() { if (this.texture) this.texture.needsUpdate = true; }
         });
 
-        // 2. SURFACE SPANWER COMPONENT
-        AFRAME.registerComponent('surface-spawner', {
-            init: function() {
-                const videoAsset = document.querySelector('#gs-video');
-                
-                this.el.addEventListener('click', (evt) => {
-                    // Create a new entity for the spawned video
-                    const newVideo = document.createElement('a-plane');
-                    
-                    // Get the exact 3D point where the user clicked the "floor"
-                    const touchPoint = evt.detail.intersection.point;
-                    
-                    newVideo.setAttribute('position', touchPoint);
-                    // Rotation 0 0 0 makes it "stand up" like a person
-                    newVideo.setAttribute('rotation', '0 0 0'); 
-                    newVideo.setAttribute('material', {
-                        shader: 'transparent-video',
-                        src: '#gs-video',
-                        threshold: 0.6
-                    });
-                    newVideo.setAttribute('width', '1');
-                    newVideo.setAttribute('height', '1.77');
-                    
-                    this.el.sceneEl.appendChild(newVideo);
-                    videoAsset.play();
-                    console.log("Spawned at:", touchPoint);
-                });
-            }
-        });
+        let appState = "SCANNING"; // Possible: SCANNING, READY_TO_SPAWN
 
-        // IMAGE TARGET CONTROLLER
-        AFRAME.registerComponent('ar-controller', {
+        AFRAME.registerComponent('logic-handler', {
             init: function() {
+                const msgBox = document.querySelector('#msg-box');
                 const video = document.querySelector('#gs-video');
+                const floor = document.querySelector('#floor');
+
+                // 1. STEP: SCAN SUCCESSFUL
                 this.el.addEventListener('targetFound', () => {
-                    video.play();
+                    if (appState === "SCANNING") {
+                        appState = "READY_TO_SPAWN";
+                        msgBox.innerHTML = "Cloning is done! <br> Now point at the surface and tap to spawn.";
+                        msgBox.style.display = "block";
+                        // Temporarily show video on target to show it's "captured"
+                        document.querySelector('#target-plane').setAttribute('visible', 'true');
+                        video.play();
+                    }
                 });
-                this.el.addEventListener('targetLost', () => video.pause());
+
+                // 2. STEP: SPAWN ON CLICK
+                floor.addEventListener('click', (evt) => {
+                    if (appState === "READY_TO_SPAWN") {
+                        const newVideo = document.createElement('a-plane');
+                        const hitPoint = evt.detail.intersection.point;
+                        
+                        newVideo.setAttribute('position', hitPoint);
+                        newVideo.setAttribute('rotation', '0 0 0'); // Standing up
+                        newVideo.setAttribute('material', 'shader: transparent-video; src: #gs-video; threshold: 0.6');
+                        newVideo.setAttribute('width', '1');
+                        newVideo.setAttribute('height', '1.77');
+                        
+                        this.el.sceneEl.appendChild(newVideo);
+                        msgBox.innerHTML = "Spawned! Tap elsewhere to add more.";
+                    }
+                });
             }
         });
+
+        function startApp() {
+            document.querySelector('#start-screen').style.display = 'none';
+            document.querySelector('#msg-box').style.display = 'block';
+            document.querySelector('#msg-box').innerText = "Step 1: Scan the Photo";
+            // Pre-warm video
+            const v = document.querySelector('#gs-video');
+            v.play(); v.pause();
+        }
     </script>
 </head>
 
-<body style="margin: 0; overflow: hidden;">
-    <div id="ui" style="position:fixed; z-index:9999; width:100%; height:100%; background:rgba(0,0,0,0.7); display:flex; justify-content:center; align-items:center;">
-        <button onclick="document.querySelector('#ui').style.display='none'; document.querySelector('#gs-video').play(); document.querySelector('#gs-video').pause();" 
-                style="padding: 20px; font-size: 20px; border-radius: 10px; cursor: pointer;">
-            TAP TO START AR
-        </button>
-    </div>
+<body>
+    <div id="start-screen"><button onclick="startApp()">START AR</button></div>
+    <div id="msg-box">Step 1: Scan the Photo</div>
 
     <a-scene 
         mindar-image="imageTargetSrc: ./targets.mind;" 
         vr-mode-ui="enabled: false" 
-        device-orientation-permission-ui="enabled: false"
         cursor="rayOrigin: mouse"
-        raycaster="objects: .clickable-surface">
+        raycaster="objects: .surface">
 
         <a-assets>
-            <video id="gs-video" src="video.mp4" preload="auto" loop="true" crossorigin="anonymous" playsinline webkit-playsinline></video>
+            <video id="gs-video" src="video.mp4" loop="true" crossorigin="anonymous" playsinline></video>
         </a-assets>
 
         <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-        <a-entity mindar-image-target="targetIndex: 0" ar-controller>
-            <a-plane 
-                material="shader: transparent-video; src: #gs-video; threshold: 0.6; color: #00ff00" 
-                position="0 0 0" 
-                height="1" 
-                width="1.77"> 
-            </a-plane>
+        <a-entity id="my-target" mindar-image-target="targetIndex: 0" logic-handler>
+            <a-plane id="target-plane" visible="false" material="shader: transparent-video; src: #gs-video" height="1" width="1.77"></a-plane>
         </a-entity>
 
-        <a-plane 
-            class="clickable-surface" 
-            surface-spawner 
-            rotation="-90 0 0" 
-            position="0 -1.5 -2" 
-            width="10" 
-            height="10" 
-            material="opacity: 0.0; transparent: true">
-        </a-plane>
+        <a-plane id="floor" class="surface" rotation="-90 0 0" position="0 -1.5 -3" width="20" height="20" material="opacity: 0; transparent: true"></a-plane>
 
     </a-scene>
 </body>
